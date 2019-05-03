@@ -1,2 +1,2 @@
-# CemaNeige_Snow_Model
+# CemaNeige Snow Model
 Python implementation of the CemaNeige snow module
