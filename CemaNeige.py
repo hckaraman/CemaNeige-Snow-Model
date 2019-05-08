@@ -1,19 +1,11 @@
 #region modules
-
 import numpy as np
 import matplotlib.pyplot as plt
 import math
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
-import seaborn
-from scipy import stats
-from matplotlib.offsetbox import AnchoredText
-import matplotlib.dates as mdates
 pd.plotting.register_matplotlib_converters(explicit=True)
-# seaborn.set()
-np.seterr(all='ignore')
-
 #endregion
 
 
@@ -32,13 +24,15 @@ class snow(object):
         self.Lat = 46.0
         self.Date = None
         self.PEcalulated = None
-        self.stataionel = 500
-        self.zoneeleation = 1300
+        self.stataionel = 495
+        self.zoneeleation = (550,620,700,785,920)
+        self.weight = (0.2,0.2,0.2,0.2,0.2)
         self.tlapsrate = -0.0065
         self.plapsrate = 0.0004
         self.degreeday = 3.74
         self.snowpackinertia = 0.25
         self.snowstorage = None
+        self.snowstorageupdated = None
         self.Pupdated = None
         self.actualmelt = None
         self.LiqP = None
@@ -95,42 +89,45 @@ class snow(object):
             self.PEcalulated[i] = max(0,Rad*(self.Tmean[i]+5)/28.5/100)
 
     def Zone(self):
-        self.snowstorage = np.zeros(self.n)
-        Tminz = self.Timn + (self.zoneeleation - self.stataionel)*self.tlapsrate
-        Tmeanz = self.Tmean + (self.zoneeleation - self.stataionel)*self.tlapsrate
-        Tmaxz = self.Tmax + (self.zoneeleation - self.stataionel)*self.tlapsrate
-        Pretotalz = self.P*math.exp((self.zoneeleation-self.stataionel)*self.plapsrate)
-        # persnow = (D3<=0,1,IF(B3>=0,0,1-D3/(D3-B3)))
-        persnow = np.where(Tmaxz < 0.1,1,np.where(Tminz >= 0,0, 1 -Tmaxz/(Tmaxz-Tminz) ))
-        self.LiqP =Pretotalz*(1-persnow)
-        SolP = Pretotalz*persnow
-        prepp = np.average(SolP)*0.9*365.25
-        snowbeforemelt = np.zeros(len(SolP))
-        snowbeforemelt[0] = 0
-        snowpacktemp =np.zeros(len(SolP))
-        snowpacktemp[0] = 0
-        potmelt = np.zeros(len(SolP))
-        potmelt[0] = np.where(snowpacktemp[0] == 0 , min(snowbeforemelt[0],max(0,self.degreeday*Tmeanz[0])),0)
-        moderatingfactor = np.zeros(len(SolP))
-        moderatingfactor[0] = np.where(snowbeforemelt[0] < prepp, snowbeforemelt[0]/prepp,1)
-        self.actualmelt = np.zeros(len(SolP))
-        self.actualmelt[0] = (0.9*moderatingfactor[0]+0.1)*potmelt[0]
-        self.snowstorage[0] = - self.actualmelt[0] + snowbeforemelt[0]
+        self.snowstorage = np.zeros((self.n,len(self.zoneeleation)))
+        self.actualmelt = np.zeros((self.n,len(self.zoneeleation)))
+        self.LiqP = np.zeros((self.n,len(self.zoneeleation)))
 
-        for i in range(1,self.n):
-            snowbeforemelt[i] = SolP[i] + self.snowstorage[i-1]
-            snowpacktemp[i] = min(0,self.snowpackinertia*snowpacktemp[i-1]+(1-self.snowpackinertia)*Tmeanz[i])
-            potmelt[i] = np.where(snowpacktemp[i] == 0, min(snowbeforemelt[i], max(0, self.degreeday * Tmeanz[i])), 0)
-            moderatingfactor[i] = np.where(snowbeforemelt[i] < prepp, snowbeforemelt[i] / prepp, 1)
-            self.actualmelt[i] = (0.9 * moderatingfactor[i] + 0.1) * potmelt[i]
-            self.snowstorage[i] = - self.actualmelt[i] + snowbeforemelt[i]
+        for j,el in enumerate(self.zoneeleation):
+            Tminz = self.Timn + (el - self.stataionel)*self.tlapsrate
+            Tmeanz = self.Tmean + (el - self.stataionel)*self.tlapsrate
+            Tmaxz = self.Tmax + (el - self.stataionel)*self.tlapsrate
+            Pretotalz = self.P*math.exp((el-self.stataionel)*self.plapsrate)
+            persnow = np.where(Tmaxz < 0.1,1,np.where(Tminz >= 0,0, 1 -Tmaxz/(Tmaxz-Tminz) ))
+            self.LiqP[:,j] =Pretotalz*(1-persnow[:])
+            SolP = Pretotalz*persnow
+            prepp = np.average(SolP)*0.9*365.25
+            snowbeforemelt = np.zeros(len(SolP))
+            snowbeforemelt[0] = 0
+            snowpacktemp =np.zeros(len(SolP))
+            snowpacktemp[0] = 0
+            potmelt = np.zeros(len(SolP))
+            potmelt[0] = np.where(snowpacktemp[0] == 0 , min(snowbeforemelt[0],max(0,self.degreeday*Tmeanz[0])),0)
+            moderatingfactor = np.zeros(len(SolP))
+            moderatingfactor[0] = np.where(snowbeforemelt[0] < prepp, snowbeforemelt[0]/prepp,1)
+            self.actualmelt[0,j] = (0.9*moderatingfactor[0]+0.1)*potmelt[0]
+            self.snowstorage[0,j] = - self.actualmelt[0,j] + snowbeforemelt[0]
+
+            for i in range(1,self.n):
+                snowbeforemelt[i] = SolP[i] + self.snowstorage[i-1,j]
+                snowpacktemp[i] = min(0,self.snowpackinertia*snowpacktemp[i-1]+(1-self.snowpackinertia)*Tmeanz[i])
+                potmelt[i] = np.where(snowpacktemp[i] == 0, min(snowbeforemelt[i], max(0, self.degreeday * Tmeanz[i])), 0)
+                moderatingfactor[i] = np.where(snowbeforemelt[i] < prepp, snowbeforemelt[i] / prepp, 1)
+                self.actualmelt[i,j] = (0.9 * moderatingfactor[i] + 0.1) * potmelt[i]
+                self.snowstorage[i,j] = - self.actualmelt[i,j] + snowbeforemelt[i]
 
     def updateP(self):
-        self.Pupdated = self.actualmelt + self.LiqP
+        for i in range(len(self.LiqP)):
+            self.Pupdated[i] = sum((self.actualmelt[i, :] + self.LiqP[i,:]) * self.weight[:])
 
     def updatedf(self):
         self.df['Julian_Date'] = self.J
-        self.df['Snow_Storage'] = self.snowstorage
+        # self.df['Snow_Storage'] = self.snowstorage
         self.df['Pupdated'] = self.Pupdated
         self.df['PECalculated'] = self.PEcalulated
 
@@ -191,4 +188,4 @@ snow.updateP()
 snow.updatedf()
 snow.draw()
 snow.drawpe()
-snow.drawstorage()
+# snow.drawstorage()
